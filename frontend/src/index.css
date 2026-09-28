@@ -1,0 +1,51 @@
+:root {
+  --gov-primary: #0e3768;
+  --gov-primary-dark: #0a2547;
+  --gov-primary-light: #1b4d8a;
+  --gov-accent: #e65100;
+  --gov-accent-hover: #c94400;
+  --gov-bg: #f8fafc;
+  --gov-surface: #ffffff;
+  --gov-border: #e2e8f0;
+  --gov-border-dark: #cbd5e1;
+  --gov-text-primary: #0f172a;
+  --gov-text-secondary: #475569;
+  --gov-text-muted: #64748b;
+  --gov-success: #15803d;
+  --gov-warning: #b45309;
+  --gov-danger: #b91c1c;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-marathi: 'Noto Sans Devanagari', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--gov-bg);
+  color: var(--gov-text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, textarea, select {
+  font-family: inherit;
+}
+
+a {
+  color: var(--gov-primary-light);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
