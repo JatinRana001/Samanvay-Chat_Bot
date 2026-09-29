@@ -11,7 +11,7 @@ class ChatResponse(BaseModel):
     message: str
     extracted_profile: BusinessProfile
     missing_fields: List[str]
-    response_type: Literal["profile", "website_faq"] = "profile"
+    response_type: Literal["profile", "website_faq", "knowledge"] = "profile"
     quick_suggestions: List[str] = []
     ready_for_recommendation: bool = False
     out_of_scope: bool = False

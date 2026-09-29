@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 from app.main import app
 
 client = TestClient(app)
@@ -9,7 +10,14 @@ def test_health_check_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert data["scope"] == "Maharashtra, India"
+    assert data["database"] == "ok"
+
+
+def test_health_check_reports_database_failure_as_503():
+    with patch("app.main.check_database_connection", side_effect=RuntimeError("unreachable")):
+        response = client.get("/api/health")
+    assert response.status_code == 503
+    assert response.json() == {"database": "error"}
 
 def test_industries_endpoint():
     response = client.get("/api/industries")
@@ -47,7 +55,7 @@ def test_recommend_approvals_endpoint():
     data = response.json()
     assert "approvals" in data
     assert len(data["approvals"]) > 0
-    assert len(data["basic_setup_steps"]) == 6
+    assert len(data["basic_setup_steps"]) == 1
     assert len(data["next_steps"]) > 0
 
 def test_chat_single_turn_and_progressive_flow():
@@ -58,7 +66,8 @@ def test_chat_single_turn_and_progressive_flow():
     assert response.status_code == 200
     data = response.json()
     assert data["extracted_profile"]["industry"] == "Automobile & Auto Components"
-    assert data["ready_for_recommendation"] is True
+    assert data["ready_for_recommendation"] is False
+    assert "sub_sector" in data["missing_fields"]
     assert data["out_of_scope"] is False
 
     # 2. Insufficient information message (Scenario 7)

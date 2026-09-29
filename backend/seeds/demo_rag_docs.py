@@ -102,6 +102,10 @@ def seed_rag_documents():
             # remain searchable across processes, and configured Gemini models stay current.
             for chunk in existing.chunks:
                 chunk.embedding_vector = EmbeddingService.get_embedding(chunk.chunk_text)
+                chunk.embedding_model = EmbeddingService.last_model
+                chunk.embedding_dim = len(chunk.embedding_vector)
+                chunk.metadata_json = {**(chunk.metadata_json or {}), "embedding_model": EmbeddingService.last_model,
+                                       "embedding_dim": len(chunk.embedding_vector)}
                 total_chunks += 1
             db.commit()
 

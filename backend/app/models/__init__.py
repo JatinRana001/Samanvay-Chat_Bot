@@ -5,6 +5,7 @@ from app.models.approval import Approval
 from app.models.rule import ApprovalRule
 from app.models.document import Document, ApprovalDocument
 from app.models.rag import RegulatoryDocument, RegulatoryChunk
+from app.models.chat_session import ChatSession
 
 __all__ = [
     "Department",
@@ -16,4 +17,5 @@ __all__ = [
     "ApprovalDocument",
     "RegulatoryDocument",
     "RegulatoryChunk",
+    "ChatSession",
 ]

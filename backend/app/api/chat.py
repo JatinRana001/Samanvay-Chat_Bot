@@ -11,12 +11,13 @@ from app.services.website_faq import answer_website_question
 router = APIRouter(prefix="/api", tags=["Chat & Business Profile"])
 
 @router.post("/chat", response_model=ChatResponse)
-def handle_chat_message(request: ChatRequest):
+def handle_chat_message(request: ChatRequest, db: Session = Depends(get_db)):
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     return SessionService.process_chat_message(
         session_id=request.session_id,
-        user_message=request.message
+        user_message=request.message,
+        db=db,
     )
 
 
@@ -36,7 +37,7 @@ def update_or_create_business_profile(request: BusinessProfileUpdateRequest):
         updated_profile.district is not None and
         updated_profile.investment_inr is not None
     )
-    completed = [k for k, v in updated_profile.dict().items() if v is not None and k not in ["state", "additional_attributes"]]
+    completed = [k for k, v in updated_profile.model_dump().items() if v is not None and k not in ["state", "additional_attributes"]]
     return BusinessProfileResponse(
         session_id=session_id,
         profile=updated_profile,
@@ -54,7 +55,7 @@ def get_business_profile(session_id: str):
         profile.district is not None and
         profile.investment_inr is not None
     )
-    completed = [k for k, v in profile.dict().items() if v is not None and k not in ["state", "additional_attributes"]]
+    completed = [k for k, v in profile.model_dump().items() if v is not None and k not in ["state", "additional_attributes"]]
     return BusinessProfileResponse(
         session_id=session_id,
         profile=profile,

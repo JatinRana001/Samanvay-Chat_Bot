@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api", tags=["RAG & Regulations"])
 @router.post("/search-regulations")
 def search_regulations(request: RegulationSearchRequest, db: Session = Depends(get_db)):
     query = request.query
-    # Fallback keyword and full text query across verified regulatory knowledge base
+    # Keyword and full text lookup across ingested workbook/regulatory text.
     docs = db.query(RegulatoryDocument).filter(
         (RegulatoryDocument.title.ilike(f"%{query}%")) | 
         (RegulatoryDocument.extracted_text.ilike(f"%{query}%"))
@@ -26,6 +26,7 @@ def search_regulations(request: RegulationSearchRequest, db: Session = Depends(g
                 "department": d.department,
                 "source_url": d.source_url,
                 "last_verified": d.last_verified,
+                "verification_date_label": str(d.last_verified) if d.last_verified else "Verification date not recorded in source dataset",
                 "is_demo": d.is_demo
             }
             for d in docs
@@ -44,9 +45,9 @@ def query_rag_pipeline(request: RAGQueryRequest, db: Session = Depends(get_db)):
 
     explanation = None
     if not results:
-        explanation = "No verified regulatory clause was found matching your query in the Maharashtra regulatory database."
+        explanation = "No matching text was found in the Samanvay dataset."
     else:
-        explanation = f"Found {len(results)} verified clauses in official Maharashtra Government circulars and Gazettes."
+        explanation = f"Found {len(results)} matching text records in the Samanvay dataset. Check each record's source and verification date."
 
     return RAGQueryResponse(
         query=request.query,

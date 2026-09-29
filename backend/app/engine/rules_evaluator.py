@@ -1,4 +1,6 @@
 import logging
+import json
+import re
 from typing import List, Dict, Tuple, Optional
 from datetime import date
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -31,14 +33,37 @@ class DeterministicRulesEngine:
         )
 
         recommended_approvals: List[RecommendedApproval] = []
+        baseline_registrations: List[str] = []
+        not_applicable = []
+        category_breakdowns = {}
+        data_gaps = ["Verification date not recorded in source dataset"]
         doc_checklist_map: Dict[str, str] = {}
 
         for approval in approvals:
+            if not approval.rules:
+                baseline_registrations.append(f"{approval.name} — No applicability rule in the dataset; verify whether it applies")
+                data_gaps.append(f"No applicability rule for {approval.name}")
+                if not approval.documents:
+                    data_gaps.append(f"No document mapping for {approval.name}")
+                continue
             is_matched, applicability, why_text, cond_summary = cls._evaluate_single_approval(approval, profile)
+            if applicability == "Not applicable" and why_text != "No matching condition triggers found.":
+                not_applicable.append({"approval_id": approval.id, "name": approval.name, "reason": why_text})
+                continue
+            if cond_summary:
+                try:
+                    parsed_summary = json.loads(cond_summary)
+                    if parsed_summary.get("by_category"):
+                        category_breakdowns[approval.id] = parsed_summary["by_category"]
+                except (ValueError, AttributeError) as exc:
+                    logger.warning("Unable to parse category breakdown for approval %s: %s", approval.id, type(exc).__name__)
             
             if is_matched:
-                days_old = (today - approval.last_verified).days
-                is_outdated = days_old > staleness_threshold
+                if not approval.last_verified:
+                    data_gaps.append(f"Verification date not recorded for {approval.name}")
+                if not approval.documents:
+                    data_gaps.append(f"No document mapping for {approval.name}")
+                is_outdated = bool(approval.last_verified and (today - approval.last_verified).days > staleness_threshold)
 
                 req_docs: List[DocumentChecklistItem] = []
                 for app_doc in approval.documents:
@@ -72,6 +97,7 @@ class DeterministicRulesEngine:
                     renewal_required=approval.renewal_required,
                     last_verified=approval.last_verified,
                     is_potentially_outdated=is_outdated,
+                    is_demo=approval.is_demo,
                     required_documents=req_docs
                 )
                 recommended_approvals.append(rec_app)
@@ -102,17 +128,28 @@ class DeterministicRulesEngine:
             basic_setup_steps=basic_steps,
             approvals=recommended_approvals,
             document_checklist=document_checklist,
-            next_steps=next_steps
+            next_steps=next_steps,
+            baseline_registrations=baseline_registrations,
+            not_applicable=not_applicable,
+            by_category=category_breakdowns,
+            assumptions=[f"{field} was not provided" for field in ("district", "investment_inr", "employee_count", "sub_sector", "activity", "pollution_category", "project_stage", "hazardous_materials", "construction_required") if getattr(profile, field, None) is None],
+            data_gaps=sorted(set(data_gaps)),
         )
 
     @classmethod
     def _evaluate_single_approval(cls, approval: Approval, profile: BusinessProfile) -> Tuple[bool, str, str, Optional[str]]:
         if not approval.rules:
-            # Without explicit rules we cannot safely claim applicability.
-            return True, "Information required", "This registry record has no applicability rules; verify with the issuing authority.", "Applicability rules are not configured."
+            return False, "Not applicable", "No applicability rule is configured.", None
 
-        for rule in approval.rules:
+        applicability_rank = {"Likely applicable": 0, "Potentially applicable": 1, "Depends on conditions": 2, "Information required": 3}
+        matched = []
+        ordered_rules = sorted(approval.rules, key=lambda rule: (
+            0 if getattr(rule, "district", None) else 1 if (getattr(rule, "sub_sector", None) or getattr(rule, "activity", None)) else 2 if getattr(rule, "industry", None) else 3,
+            str(getattr(rule, "id", "")),
+        ))
+        for rule in ordered_rules:
             scope_needs_confirmation = False
+            embedded_sub_sector = None
             # 1. State check
             if rule.state and profile.state and rule.state.lower() != profile.state.lower():
                 continue
@@ -139,16 +176,20 @@ class DeterministicRulesEngine:
                 # A legacy label may have carried a sub-sector qualifier in
                 # the industry column. Preserve its scope instead of treating
                 # it as a match for every business in the parent industry.
-                required_scope = "; ".join(filter(None, [embedded_sub_sector, rule.sub_sector, rule.activity]))
-                supplied_scope = "; ".join(filter(None, [profile.sub_sector, profile.activity]))
-                if required_scope:
-                    if not supplied_scope:
-                        scope_needs_confirmation = True
-                    else:
-                        required_terms = [part.strip().casefold() for part in required_scope.split(";") if part.strip()]
-                        supplied_folded = supplied_scope.casefold()
-                        if not all(term in supplied_folded or supplied_folded in term for term in required_terms):
-                            continue
+            activity_text = getattr(rule, "activity", None)
+            scope_activity = None
+            if activity_text and re.search(r"\b(paint shop|foundry|forging|processing/dyeing|light assembly|MRO|generation|dry storage|township|processing unit)\b", activity_text, re.I):
+                scope_activity = activity_text
+            required_scope = "; ".join(filter(None, [embedded_sub_sector, getattr(rule, "sub_sector", None), scope_activity]))
+            supplied_scope = "; ".join(filter(None, [profile.sub_sector, profile.activity]))
+            if required_scope:
+                if not supplied_scope:
+                    scope_needs_confirmation = True
+                else:
+                    required_terms = [part.strip().casefold() for part in required_scope.split(";") if part.strip()]
+                    supplied_folded = supplied_scope.casefold()
+                    if not all(term in supplied_folded or supplied_folded in term for term in required_terms):
+                        continue
 
             # 3. District match
             if rule.district:
@@ -179,8 +220,19 @@ class DeterministicRulesEngine:
                     continue
 
             # 8. Pollution category check
-            if rule.pollution_category and profile.pollution_category:
-                if rule.pollution_category.lower() != profile.pollution_category.lower():
+            if getattr(rule, "employee_max", None) is not None and profile.employee_count is not None:
+                if profile.employee_count > rule.employee_max:
+                    continue
+
+            if getattr(rule, "project_stage", None) and profile.project_stage:
+                allowed_stages = {part.strip().casefold() for part in re.split(r"[;,/]", rule.project_stage) if part.strip()}
+                supplied_stages = {part.strip().casefold() for part in re.split(r"[;,/]", profile.project_stage) if part.strip()}
+                if not allowed_stages.intersection(supplied_stages):
+                    continue
+
+            if rule.pollution_category:
+                category = profile.pollution_category
+                if category and rule.pollution_category.lower() != category.lower():
                     continue
 
             conditions_match, condition_note = ConditionEvaluator.evaluate_rule_conditions(rule.conditions or {}, profile)
@@ -196,51 +248,35 @@ class DeterministicRulesEngine:
                 why_text += " Confirm the project's sub-sector or activity before treating this approval as applicable."
 
             cond_summary = str(rule.conditions) if rule.conditions else None
-            return True, applicability, why_text, cond_summary
+            if applicability.casefold() == "not applicable":
+                matched.append((0, (0, str(getattr(rule, "id", ""))), "Not applicable", why_text, cond_summary, rule.pollution_category))
+                continue
+            specificity = (0 if getattr(rule, "district", None) else 1 if (getattr(rule, "sub_sector", None) or getattr(rule, "activity", None)) else 2 if getattr(rule, "industry", None) else 3, str(getattr(rule, "id", "")))
+            matched.append((applicability_rank.get(applicability, 9), specificity, applicability, why_text, cond_summary, rule.pollution_category))
 
+        if matched:
+            category_rules = matched
+            categories = {}
+            for item in category_rules:
+                if item[5]:
+                    candidate = (item[1], item[2])
+                    if item[5] not in categories or candidate[0] < categories[item[5]][0]:
+                        categories[item[5]] = candidate
+            if profile.pollution_category is None and len(categories) > 1:
+                breakdown = {category: value[1] for category, value in categories.items()}
+                detail = "; ".join(f"{category}: {value}" for category, value in sorted(breakdown.items()))
+                return True, "Depends on conditions", f"Applicability depends on pollution category: {detail}.", json.dumps({"by_category": breakdown})
+            _, _, applicability, why_text, cond_summary, _ = min(matched, key=lambda item: item[1])
+            if applicability == "Not applicable":
+                return False, applicability, why_text, cond_summary
+            return True, applicability, why_text, cond_summary
         return False, "Not applicable", "No matching condition triggers found.", None
 
     @classmethod
     def _generate_setup_steps(cls, profile: BusinessProfile) -> List[SetupStep]:
-        industry_name = profile.industry or "Manufacturing Unit"
-        district_name = profile.district or "Maharashtra"
-
-        steps = [
-            SetupStep(
-                step_number=1,
-                title="Business Entity & Udyam MSME Registration",
-                description="Incorporate company/LLP and register Udyam certificate on the National MSME portal (instant & free).",
-                department_involved="Ministry of MSME / Directorate of Industries"
-            ),
-            SetupStep(
-                step_number=2,
-                title="Industrial Land / Shed Acquisition",
-                description=f"Secure land allotment via MIDC Single Window portal (services.midcindia.org) or private industrial land in {district_name}.",
-                department_involved="MIDC / Revenue Department"
-            ),
-            SetupStep(
-                step_number=3,
-                title="Check MPCB Consent to Establish applicability",
-                description="Confirm whether the selected activity and pollution category require MPCB Consent to Establish before starting construction.",
-                department_involved="Maharashtra Pollution Control Board (MPCB)"
-            ),
-            SetupStep(
-                step_number=4,
-                title="Factory Building Plan Appraisal & Fire Provisional NOC",
-                description="Submit architectural structural drawings and fire safety plans to DISH / Local Authority before plant construction.",
-                department_involved="Directorate of Industrial Safety & Health (DISH) / Fire Services"
-            ),
-            SetupStep(
-                step_number=5,
-                title="Power & Water Infrastructure Sanctions",
-                description="Apply for High-Tension (HT) or Low-Tension (LT) power supply via MSEDCL portal and water connection via MIDC.",
-                department_involved="MSEDCL & MIDC Water Supply"
-            ),
-            SetupStep(
-                step_number=6,
-                title="Check operating and sector-specific licenses",
-                description=f"Before operations, confirm which operating consents and licenses apply to the selected activity ({industry_name}), including any factory or sector-specific license.",
-                department_involved="MPCB, DISH & Regulatory Authorities"
-            )
-        ]
-        return steps
+        return [SetupStep(
+            step_number=1,
+            title="Review the workbook-matched records",
+            description="Check each applicability note, source, and listed data gap against the project details, then confirm uncertain requirements with the authority named in the record.",
+            department_involved=None,
+        )]

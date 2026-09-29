@@ -1,7 +1,10 @@
 import os
+import logging
 from typing import Optional
 from app.config import settings
 from app.schemas.approval import ApprovalRecommendationResult
+
+logger = logging.getLogger(__name__)
 
 try:
     from google import genai
@@ -20,6 +23,12 @@ class GeminiExplanationService:
 
     @classmethod
     def generate_explanation(cls, recommendation: ApprovalRecommendationResult, sources=None) -> str:
+        # Structured workbook answers remain fully deterministic. Gemini is
+        # deliberately not used to add regulatory claims or date assertions.
+        return cls._format_deterministic_explanation(recommendation)
+
+    @classmethod
+    def _generate_paraphrase_if_enabled(cls, recommendation: ApprovalRecommendationResult, sources=None) -> str:
         api_key = settings.GEMINI_API_KEY
         
         # Fallback deterministic structured formatter if Gemini API key is not provided
@@ -33,7 +42,7 @@ class GeminiExplanationService:
                     "CRITICAL RULES:\n"
                     "1. You must ONLY explain the structured database records provided in the context.\n"
                     "2. You must NEVER invent, infer, or hallucinate approvals, fees, timelines, or legal requirements not explicitly present in the data.\n"
-                    "3. Every regulatory claim must display its official source and last_verified date.\n"
+                    "3. Every regulatory claim must display its official source and state when its verification date is absent.\n"
                     "4. When applicability is uncertain, use hedged language ('may apply depending on...', 'further verification required...').\n"
                     "5. Structure the output clearly: Business Profile, Basic Setup Steps, Applicable Approvals, Document Checklist, Next Steps, and Disclaimer. "
                     "Do not introduce regulatory claims absent from the structured records or retrieved documents. Include source and last_verified for every regulatory claim."
@@ -48,8 +57,8 @@ class GeminiExplanationService:
             prompt = (
                 f"Explain the following verified regulatory recommendation for a business in Maharashtra:\n\n"
                 f"Business Profile:\n{recommendation.business_profile.model_dump_json()}\n\n"
-                f"Approvals:\n{[a.dict() for a in recommendation.approvals]}\n\n"
-                f"Setup Steps:\n{[s.dict() for s in recommendation.basic_setup_steps]}\n\n"
+                f"Approvals:\n{[a.model_dump() for a in recommendation.approvals]}\n\n"
+                f"Setup Steps:\n{[s.model_dump() for s in recommendation.basic_setup_steps]}\n\n"
                 f"Document Checklist:\n{recommendation.document_checklist}\n\n"
                 f"Retrieved regulatory documents:\n{source_context}\n"
             )
@@ -65,6 +74,7 @@ class GeminiExplanationService:
             return response.text or cls._format_deterministic_explanation(recommendation)
         except Exception as e:
             # Graceful fallback to deterministic explanation upon API error
+            logger.warning("Gemini explanation failed; using deterministic fallback: %s", type(e).__name__)
             return cls._format_deterministic_explanation(recommendation)
 
     @classmethod
@@ -82,9 +92,9 @@ class GeminiExplanationService:
         lines.append("")
 
         lines.append("### 🏛️ Potentially Applicable Approvals & Clearances")
-        for a in r.approvals:
+        for index, a in enumerate(r.approvals, start=1):
             outdated_tag = " ⚠️ [Notice: Last verified >180 days ago]" if a.is_potentially_outdated else ""
-            lines.append(f"#### 1. {a.name} ({a.applicability}){outdated_tag}")
+            lines.append(f"#### {index}. {a.name} ({a.applicability}){outdated_tag}")
             lines.append(f"- **Department:** {a.department_name}")
             lines.append(f"- **Why Applicable:** {a.why_applicable}")
             if a.fee_info:
@@ -95,7 +105,8 @@ class GeminiExplanationService:
                 lines.append(f"- **Validity:** {a.validity} (Renewal: {'Required' if a.renewal_required else 'Not Required'})")
             if a.official_portal:
                 lines.append(f"- **Official Portal:** [{a.official_portal}]({a.official_portal})")
-            lines.append(f"- **Official Source:** {a.official_source} (Verified: {a.last_verified})")
+            verified = f"Verified: {a.last_verified}" if a.last_verified else "Verification date not recorded in source dataset"
+            lines.append(f"- **Source:** {a.official_source} ({verified})")
             if a.required_documents:
                 doc_list = ", ".join([d.name for d in a.required_documents])
                 lines.append(f"- **Required Documents:** {doc_list}")
@@ -107,6 +118,18 @@ class GeminiExplanationService:
             lines.append(f"- ⚠ {doc}")
         lines.append("")
 
+        if r.baseline_registrations:
+            lines.append("### Baseline registrations to check")
+            lines.extend(f"- {item}" for item in r.baseline_registrations)
+            lines.append("")
+        if r.not_applicable:
+            lines.append("### Not applicable")
+            lines.extend(f"- {item['name']}: {item['reason']}" for item in r.not_applicable)
+            lines.append("")
+        if r.data_gaps or r.assumptions:
+            lines.append("### Assumptions and data gaps")
+            lines.extend(f"- {item}" for item in [*r.assumptions, *r.data_gaps])
+            lines.append("")
         lines.append("### 🚀 Recommended Next Steps")
         for step in r.next_steps:
             lines.append(f"- {step}")

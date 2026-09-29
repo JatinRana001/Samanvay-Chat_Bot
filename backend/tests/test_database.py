@@ -5,8 +5,19 @@ from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
+from app.database import Base, normalize_database_url
 from app.models.department import Department
+
+
+def test_database_url_quotes_special_password_without_losing_normalization():
+    from sqlalchemy.engine import make_url
+
+    raw = normalize_database_url("postgres://user:p@ss!word@db.example:5432/app")
+    parsed = make_url(raw)
+    assert parsed.drivername == "postgresql+psycopg2"
+    assert parsed.password == "p@ss!word"
+    encoded = normalize_database_url("postgresql://user:p%40ss@db.example:5432/app")
+    assert make_url(encoded).password == "p@ss"
 
 
 def test_alembic_migrations_apply_to_fresh_sqlite_database(tmp_path):

@@ -10,6 +10,7 @@ class ApprovalRule(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     approval_id = Column(String(36), ForeignKey("approvals.id", ondelete="CASCADE"), nullable=False)
     industry = Column(String(255), nullable=True)
+    industry_label_raw = Column(String(255), nullable=True)
     sub_sector = Column(String(255), nullable=True)
     activity = Column(String(255), nullable=True)
     state = Column(String(100), nullable=False, default="Maharashtra")

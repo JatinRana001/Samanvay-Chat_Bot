@@ -1,5 +1,6 @@
 import math
 import hashlib
+import logging
 from typing import List
 from app.config import settings
 
@@ -13,6 +14,9 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 class EmbeddingService:
+    DIMENSION = 768
+    MODEL_TAG = settings.EMBEDDING_MODEL.removeprefix("models/")
+    last_model = "fallback-hash"
     @classmethod
     def get_embedding(cls, text: str) -> List[float]:
         api_key = settings.GEMINI_API_KEY
@@ -22,13 +26,15 @@ class EmbeddingService:
                 result = client.models.embed_content(
                     model=settings.EMBEDDING_MODEL.removeprefix("models/"),
                     contents=text,
-                    config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
+                    config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT", output_dimensionality=cls.DIMENSION),
                 )
+                cls.last_model = cls.MODEL_TAG
                 return result.embeddings[0].values
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.warning("Gemini document embedding failed; using deterministic fallback: %s", type(exc).__name__)
         
         # Fallback deterministic pseudo-embedding (768-dim float vector)
+        cls.last_model = "fallback-hash"
         return cls._fallback_embedding(text)
 
     @classmethod
@@ -40,12 +46,14 @@ class EmbeddingService:
                 result = client.models.embed_content(
                     model=settings.EMBEDDING_MODEL.removeprefix("models/"),
                     contents=query,
-                    config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
+                    config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY", output_dimensionality=cls.DIMENSION),
                 )
+                cls.last_model = cls.MODEL_TAG
                 return result.embeddings[0].values
-            except Exception:
-                pass
-        return cls._fallback_embedding(query)
+            except Exception as exc:
+                logging.warning("Gemini query embedding failed; using deterministic fallback: %s", type(exc).__name__)
+        cls.last_model = "fallback-hash"
+        return cls._fallback_embedding(query, cls.DIMENSION)
 
     @staticmethod
     def _fallback_embedding(text: str, dim: int = 768) -> List[float]:

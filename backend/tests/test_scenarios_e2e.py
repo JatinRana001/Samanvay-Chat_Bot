@@ -20,12 +20,12 @@ def recommend(**profile):
 def test_01_food_processing_pune_http():
     result = recommend(industry="Agro & Food Processing", district="Pune", investment_inr=25_000_000, employee_count=30, pollution_category="Orange")
     assert result["approvals"]
-    assert all(a["official_source"] and a["last_verified"] for a in result["approvals"])
+    assert all(a["official_source"] and "Verification date not recorded in source dataset" in result["explanation"] for a in result["approvals"])
     assert result["explanation"]
 
 
 def test_02_textile_nashik_http():
-    result = recommend(industry="Textiles (incl. Technical Textiles)", district="Nashik", investment_inr=15_000_000, employee_count=25, pollution_category="Red")
+    result = recommend(industry="Textiles (incl. Technical Textiles)", district="Nashik", investment_inr=15_000_000, employee_count=25, pollution_category="Orange", activity="processing/dyeing")
     assert any("Consent to Establish" in a["name"] for a in result["approvals"])
 
 

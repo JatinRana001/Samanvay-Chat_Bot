@@ -1,0 +1,13 @@
+approval_id,document_id,mandatory,condition,source,needs_review
+APR002,DOC010,false,"Application process explicitly names the DPR.",derived from workbook text,true
+APR002,DOC011,false,"Application process explicitly names the site plan.",derived from workbook text,true
+APR003,DOC013,false,"Application process states CTE compliance is required before CTO.",derived from workbook text,true
+APR004,DOC010,false,"Application process explicitly names the DPR.",derived from workbook text,true
+APR004,DOC012,false,"Approval description explicitly requires an EIA report.",derived from workbook text,true
+APR006,DOC015,false,"Approval is the Factory Licence (Form 2).",derived from workbook text,true
+APR007,DOC016,false,"Approval is the Fire NOC / Fire Safety Certificate.",derived from workbook text,true
+APR009,DOC017,false,"Approval concerns electrical load sanction.",derived from workbook text,true
+APR010,DOC004,false,"Approval is Udyam registration.",derived from workbook text,true
+APR011,DOC005,false,"Approval is GST registration.",derived from workbook text,true
+APR014,DOC021,false,"Approval is Drug Manufacturing Licence.",derived from workbook text,true
+APR015,DOC022,false,"Approval is FSSAI licence/registration.",derived from workbook text,true

@@ -262,26 +262,25 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
                         <div key={i} className={styles.approvalCard}>
                           <div className={styles.approvalName}>
                             {app.name} <span style={{ fontSize: '11px', color: '#16a34a' }}>({app.applicability})</span>
-                            {app.is_potentially_outdated && (
-                              <span className={styles.outdatedWarning}> ⚠️ Last verified &gt;180 days ago</span>
-                            )}
                           </div>
                           <div className={styles.approvalMeta}>
                             <div><strong>Department:</strong> {app.department_name}</div>
                             <div><strong>Why Applicable:</strong> {app.why_applicable}</div>
                             {app.fee_info && <div><strong>Fee:</strong> {app.fee_info}</div>}
                             {app.processing_time && <div><strong>Timeline:</strong> {app.processing_time}</div>}
-                            <div className={styles.sourceBadge}>
-                              <span>Source: {app.official_source} (Verified: {app.last_verified})</span>
-                            </div>
+                            {app.last_verified ? <div>Verification date: {app.last_verified}</div> : <div>Verification date not recorded in source dataset</div>}
+                            <div className={styles.sourceBadge}><span>Source: {app.official_source}</span></div>
                           </div>
                         </div>
                       ))}
 
+                      {Object.keys(msg.data.by_category || {}).length > 0 && <section style={{ marginTop: 14 }}><strong>Depends on conditions</strong>{Object.entries(msg.data.by_category).map(([approvalId, categories]) => <div key={approvalId}><strong>{approvalId}</strong><ul>{Object.entries(categories).map(([category, applicability]) => <li key={category}>{category}: {applicability}</li>)}</ul></div>)}</section>}
                       {msg.data.baseline_registrations?.length > 0 && <section style={{ marginTop: 14 }}><strong>Baseline registrations to check</strong><ul>{msg.data.baseline_registrations.map((name) => <li key={name}>{name}</li>)}</ul></section>}
+                      {msg.data.not_applicable?.length > 0 && <details style={{ marginTop: 14 }}><summary>Not applicable</summary><ul>{msg.data.not_applicable.map((item) => <li key={item.approval_id}>{item.name}: {item.reason}</li>)}</ul></details>}
+                      {(msg.data.assumptions?.length > 0 || msg.data.data_gaps?.length > 0) && <section style={{ marginTop: 14 }}><strong>Assumptions &amp; data gaps</strong><ul>{[...(msg.data.assumptions || []), ...(msg.data.data_gaps || [])].map((item) => <li key={item}>{item}</li>)}</ul></section>}
 
                       <div style={{ marginTop: '16px' }}>
-                        <strong style={{ fontSize: '13px', color: '#0e3768' }}>📁 Required Documents Checklist:</strong>
+                        <strong style={{ fontSize: '13px', color: '#0e3768' }}>Indicative documents — verify with the authority:</strong>
                         <ul style={{ paddingLeft: '20px', marginTop: '6px', fontSize: '12px', color: '#334155' }}>
                           {msg.data.document_checklist.missing_required.map((doc, idx) => (
                             <li key={idx}>⚠ {doc}</li>
@@ -299,7 +298,7 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
                       </div>
                     </div>
                   ) : (
-                    <div>{formatText(msg.text)}</div>
+                    <ReactMarkdown>{msg.text || ''}</ReactMarkdown>
                   )}
 
                   {msg.sender === 'bot' && msg.id === latestBotMessageId && isReady && (

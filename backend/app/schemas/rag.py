@@ -15,7 +15,7 @@ class RAGChunkResult(BaseModel):
     title: str
     department: Optional[str] = None
     source_url: str
-    last_verified: date
+    last_verified: Optional[date] = None
     is_potentially_outdated: bool
     chunk_text: str
     similarity_score: float

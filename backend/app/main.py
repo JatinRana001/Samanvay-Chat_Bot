@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from app.database import engine, check_database_connection
 from app.config import settings
 from app.api.chat import router as chat_router
 from app.api.approvals import router as approvals_router
@@ -11,6 +14,10 @@ app = FastAPI(
     description="Deterministic regulatory advisory and approval navigation platform for Maharashtra",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+def validate_database_on_startup():
+    check_database_connection()
 
 origins = settings.cors_origins_list
 if not origins or "*" in origins:
@@ -44,11 +51,11 @@ def root():
 
 @app.get("/api/health")
 def health_check():
-    return {
-        "status": "healthy",
-        "environment": settings.ENVIRONMENT,
-        "scope": "Maharashtra, India"
-    }
+    try:
+        check_database_connection()
+    except RuntimeError:
+        return JSONResponse(status_code=503, content={"database": "error"})
+    return {"status": "healthy", "database": "ok"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -139,10 +139,11 @@ def seed_database(reset: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed the Samanvay regulatory database.")
     parser.add_argument("--reset", action="store_true", help="Drop and recreate all tables before demo seeding.")
-    parser.add_argument("--real-data", action="store_true", help="Import the Maharashtra workbook instead of demo registry data.")
+    parser.add_argument("--real-data", action="store_true", help="Import the Maharashtra workbook (default outside --demo).")
+    parser.add_argument("--demo", action="store_true", help="Seed clearly labelled DEMO data.")
     parser.add_argument("--workbook", help="Path to the Maharashtra workbook (used with --real-data).")
     args = parser.parse_args()
-    if args.real_data:
+    if args.real_data or not args.demo:
         from seeds.import_maharashtra_data import DEFAULT_WORKBOOK, import_workbook
         workbook = args.workbook or os.getenv("MAHARASHTRA_WORKBOOK") or DEFAULT_WORKBOOK
         import_workbook(workbook, reset=args.reset)

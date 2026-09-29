@@ -23,14 +23,14 @@ def test_food_processing_pune_scenario():
         approval_names = [a.name for a in result.approvals]
         
         # Must have MPCB CTE and FSSAI License
-        assert any("MPCB Consent to Establish" in name for name in approval_names)
+        assert any("Consent to Establish" in name for name in approval_names)
         assert any("FSSAI" in name for name in approval_names)
-        assert any("Factory Plan Approval" in name for name in approval_names)
+        assert any("Factory Plan Approval" in item for item in result.baseline_registrations)
         
         # Check that verified source is present
-        cte = next(a for a in result.approvals if "MPCB Consent to Establish" in a.name)
+        cte = next(a for a in result.approvals if "Consent to Establish" in a.name)
         assert "Water Act" in cte.official_source or "MPCB" in cte.official_source
-        assert cte.official_portal == "https://ecmpcb.mpcb.gov.in"
+        assert cte.official_portal == "https://mpcb.gov.in"
         assert len(cte.required_documents) > 0
     finally:
         db.close()
@@ -49,9 +49,9 @@ def test_auto_components_sambhajinagar_scenario():
         result = DeterministicRulesEngine.evaluate_approvals(db, profile)
         approval_names = [a.name for a in result.approvals]
         
-        assert any("MPCB Consent to Establish" in name for name in approval_names)
-        assert any("Factory Plan Approval" in name for name in approval_names)
-        assert any("Fire Safety" in name for name in approval_names)
+        assert any("Consent to Establish" in name for name in approval_names)
+        assert any("Factory Plan Approval" in item for item in result.baseline_registrations)
+        assert any("Fire NOC" in item for item in result.baseline_registrations)
     finally:
         db.close()
 
@@ -70,8 +70,8 @@ def test_pharma_manufacturing_scenario():
         approval_names = [a.name for a in result.approvals]
         
         # Must have FDA Drug License and Fire NOC for hazardous
-        assert any("FDA Drug Manufacturing License" in name for name in approval_names)
-        assert any("Fire Safety" in name for name in approval_names)
+        assert any("Drug Manufacturing Licence" in name for name in approval_names)
+        assert any("Fire NOC" in item for item in result.baseline_registrations)
     finally:
         db.close()
 
@@ -108,11 +108,11 @@ def test_pollution_category_mismatch_rejects_rule():
     assert matched is False
 
 
-def test_ruleless_approval_requires_information():
+def test_ruleless_approval_is_excluded_for_baseline_handling():
     approval = SimpleNamespace(rules=[])
     matched, applicability, *_ = DeterministicRulesEngine._evaluate_single_approval(approval, BusinessProfile())
-    assert matched is True
-    assert applicability == "Information required"
+    assert matched is False
+    assert applicability == "Not applicable"
 
 
 def test_legacy_rule_alias_is_resolved_with_warning_and_subsector_confirmation():

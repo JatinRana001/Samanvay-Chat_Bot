@@ -27,8 +27,9 @@ class RecommendedApproval(BaseModel):
     processing_time: Optional[str] = None
     validity: Optional[str] = None
     renewal_required: bool = False
-    last_verified: date
+    last_verified: Optional[date] = None
     is_potentially_outdated: bool = False
+    is_demo: bool = False
     required_documents: List[DocumentChecklistItem] = []
 
 class SetupStep(BaseModel):
@@ -44,6 +45,11 @@ class ApprovalRecommendationResult(BaseModel):
     explanation: Optional[str] = None
     document_checklist: Dict[str, List[str]] # "verified_have", "missing_required", "info_needed"
     next_steps: List[str]
+    baseline_registrations: List[str] = []
+    not_applicable: List[Dict[str, Any]] = []
+    by_category: Dict[str, Any] = {}
+    assumptions: List[str] = []
+    data_gaps: List[str] = []
     disclaimer: str = (
         "This assistant provides preliminary guidance based on available regulatory information. "
         "Actual approval requirements may vary based on project-specific conditions. "

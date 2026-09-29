@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from sqlalchemy import Column, String, Text, Boolean, Date, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, Boolean, Date, DateTime, ForeignKey, Integer, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -18,7 +18,12 @@ class Approval(Base):
     processing_time = Column(String(255), nullable=True)
     validity = Column(String(255), nullable=True)
     renewal_required = Column(Boolean, default=False)
-    last_verified = Column(Date, nullable=False, default=date.today)
+    last_verified = Column(Date, nullable=True, default=None)
+    source_workbook = Column(String(500), nullable=True)
+    source_row = Column(Integer, nullable=True)
+    imported_at = Column(DateTime, nullable=True)
+    official_portal_raw = Column(Text, nullable=True)
+    official_portal_urls = Column(JSON, nullable=True)
     status = Column(String(50), default="ACTIVE")
     is_demo = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

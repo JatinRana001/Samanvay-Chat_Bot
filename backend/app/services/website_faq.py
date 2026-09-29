@@ -4,8 +4,11 @@ Keep these answers limited to website navigation and features. Approval names,
 fees, and legal applicability belong to the deterministic approvals registry.
 """
 import re
+import logging
 from typing import Optional
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 try:
     from google import genai
@@ -249,5 +252,6 @@ def _generate_website_answer(message: str) -> str:
             ),
         )
         return response.text.strip() if response.text and response.text.strip() else WEBSITE_FALLBACK
-    except Exception:
+    except Exception as exc:
+        logger.warning("Website FAQ Gemini response failed; using static fallback: %s", type(exc).__name__)
         return WEBSITE_FALLBACK

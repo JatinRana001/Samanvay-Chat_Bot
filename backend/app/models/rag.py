@@ -13,7 +13,7 @@ class RegulatoryDocument(Base):
     source_url = Column(Text, nullable=False)
     publication_date = Column(Date, nullable=True)
     effective_date = Column(Date, nullable=True)
-    last_verified = Column(Date, nullable=False, default=date.today)
+    last_verified = Column(Date, nullable=True, default=None)
     extracted_text = Column(Text, nullable=False)
     category = Column(String(100), nullable=True)
     state = Column(String(100), nullable=False, default="Maharashtra")
@@ -30,6 +30,8 @@ class RegulatoryChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     chunk_text = Column(Text, nullable=False)
     embedding_vector = Column(JSON, nullable=True)
+    embedding_model = Column(String(255), nullable=True)
+    embedding_dim = Column(Integer, nullable=True)
     metadata_json = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
