@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bot, RefreshCw, CheckCircle2, Building, MapPin, IndianRupee, Users, ArrowRight, ExternalLink } from 'lucide-react';
-import { checkApiHealth, sendChatMessage, recommendApprovals } from '../../services/api';
+import ReactMarkdown from 'react-markdown';
+import { checkApiHealth, sendChatMessage, recommendApprovalsBySession } from '../../services/api';
 import styles from './ChatWidget.module.css';
 
 const STARTER_PROMPTS = [
@@ -11,7 +12,7 @@ const STARTER_PROMPTS = [
 ];
 
 export default function ChatWidget({ initialPrompt = '', compact = false }) {
-  const [sessionId, setSessionId] = useState(() => 'sess-' + Math.random().toString(36).substring(2, 9));
+  const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -19,6 +20,8 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
   const [quickSuggestions, setQuickSuggestions] = useState([]);
   const [isReady, setIsReady] = useState(false);
   const [recommendations, setRecommendations] = useState(null);
+  const [databaseHealthy, setDatabaseHealthy] = useState(true);
+  const [showExplanation, setShowExplanation] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -26,9 +29,12 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
   }, [messages, isTyping, recommendations]);
 
   useEffect(() => {
-    checkApiHealth().catch((error) => {
-      console.warn('[Samanvay] Backend health check failed on chat mount.', error);
-    });
+    const refreshHealth = () => checkApiHealth()
+      .then((health) => setDatabaseHealthy(health.database !== 'error'))
+      .catch(() => setDatabaseHealthy(false));
+    refreshHealth();
+    const interval = window.setInterval(refreshHealth, 30000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -74,7 +80,7 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
       const errorResponse = {
         id: Date.now() + 1,
         sender: 'bot',
-        text: '⚠️ Unable to connect to the Maharashtra regulatory server. Please check your network or try again in a moment.',
+        text: err.message || 'Unable to connect to the Samanvay backend. Check your network or CORS settings.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages((prev) => [...prev, errorResponse]);
@@ -86,7 +92,7 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
   const handleGenerateApprovals = async () => {
     setIsTyping(true);
     try {
-      const result = await recommendApprovals(currentProfile);
+      const result = await recommendApprovalsBySession(sessionId);
       setRecommendations(result);
       
       const botResponse = {
@@ -100,13 +106,14 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
       setIsReady(false);
     } catch (err) {
       console.error('Error generating approvals:', err);
+      setMessages((prev) => [...prev, { id: Date.now() + 2, sender: 'bot', text: err.message || 'Could not calculate clearances.', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
     } finally {
       setIsTyping(false);
     }
   };
 
   const handleReset = () => {
-    setSessionId('sess-' + Math.random().toString(36).substring(2, 9));
+    setSessionId(null);
     setMessages([]);
     setInputValue('');
     setCurrentProfile({});
@@ -135,6 +142,7 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
   };
 
   const hasProfileData = currentProfile.industry || currentProfile.district || currentProfile.investment_inr;
+  const latestBotMessageId = messages.filter((message) => message.sender === 'bot').at(-1)?.id;
 
   return (
     <div className={styles.chatContainer}>
@@ -147,7 +155,7 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
             <div className={styles.headerTitle}>Samanvay Assistant</div>
             <div className={styles.headerSubtitle}>
               <span className={styles.statusDot}></span>
-              <span>Maharashtra Regulatory Advisor • Online</span>
+              <span>{databaseHealthy ? 'Maharashtra Regulatory Advisor • Online' : 'Backend database unreachable'}</span>
             </div>
           </div>
         </div>
@@ -246,9 +254,11 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
                       <p style={{ fontSize: '13px', color: '#475569', marginBottom: '12px' }}>
                         Calculated by deterministic rules engine for <strong>{msg.data.business_profile.industry}</strong> in <strong>{msg.data.business_profile.district}</strong>:
                       </p>
-                      {msg.data.explanation && <p style={{ whiteSpace: 'pre-wrap', marginBottom: '12px' }}>{msg.data.explanation}</p>}
+                      {msg.data.approvals.some((app) => app.is_demo) && <span className={styles.outdatedWarning}>Demo data</span>}
+                      {msg.data.explanation && <button className={styles.suggestionChip} onClick={() => setShowExplanation((value) => !value)}>{showExplanation ? 'Hide explanation' : 'Show explanation'}</button>}
+                      {showExplanation && msg.data.explanation && <ReactMarkdown>{msg.data.explanation}</ReactMarkdown>}
 
-                      {msg.data.approvals.map((app, i) => (
+                      {msg.data.approvals.filter((app) => app.applicability !== 'Not applicable').map((app, i) => (
                         <div key={i} className={styles.approvalCard}>
                           <div className={styles.approvalName}>
                             {app.name} <span style={{ fontSize: '11px', color: '#16a34a' }}>({app.applicability})</span>
@@ -267,6 +277,8 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
                           </div>
                         </div>
                       ))}
+
+                      {msg.data.baseline_registrations?.length > 0 && <section style={{ marginTop: 14 }}><strong>Baseline registrations to check</strong><ul>{msg.data.baseline_registrations.map((name) => <li key={name}>{name}</li>)}</ul></section>}
 
                       <div style={{ marginTop: '16px' }}>
                         <strong style={{ fontSize: '13px', color: '#0e3768' }}>📁 Required Documents Checklist:</strong>
@@ -290,7 +302,7 @@ export default function ChatWidget({ initialPrompt = '', compact = false }) {
                     <div>{formatText(msg.text)}</div>
                   )}
 
-                  {msg.sender === 'bot' && isReady && (
+                  {msg.sender === 'bot' && msg.id === latestBotMessageId && isReady && (
                     <div className={styles.readyBanner}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#166534', fontWeight: '600' }}>
                         <CheckCircle2 size={16} color="#16a34a" />

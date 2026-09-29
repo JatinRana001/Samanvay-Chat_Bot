@@ -10,30 +10,44 @@ if (import.meta.env.PROD && !configuredApiBaseUrl) {
   );
 }
 
-let healthCheckPromise;
-
 async function requestJson(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
   let response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    response = await fetch(url, options);
+    response = await fetch(url, { ...options, signal: controller.signal });
   } catch (cause) {
+    clearTimeout(timeout);
     const error = new Error(
-      `Could not reach the Samanvay API at ${url}. Check the backend address, CORS settings, and HTTPS configuration.`,
+      cause.name === 'AbortError'
+        ? 'The Samanvay API request timed out after 30 seconds.'
+        : `Network or CORS error while reaching the Samanvay API at ${url}. Check the backend address and allowed origins.`,
       { cause },
     );
     error.name = 'ApiConnectionError';
     throw error;
   }
-
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `Samanvay API returned HTTP ${response.status} at ${url}`);
+    const detail = typeof body.detail === 'string'
+      ? body.detail
+      : (body.detail ? JSON.stringify(body.detail) : (body.database === 'error' ? 'Backend database unreachable' : JSON.stringify(body)));
+    const error = new Error(`HTTP ${response.status}: ${detail || `Request failed at ${url}`}`);
+    error.status = response.status;
+    clearTimeout(timeout);
+    throw error;
   }
 
   try {
-    return await response.json();
+    const result = await response.json();
+    clearTimeout(timeout);
+    return result;
   } catch (cause) {
+    clearTimeout(timeout);
+    if (cause.name === 'AbortError') {
+      throw new Error('The Samanvay API request timed out after 30 seconds.', { cause });
+    }
     throw new Error(`Samanvay API returned an invalid JSON response at ${url}`, { cause });
   }
 }
@@ -47,13 +61,7 @@ function postJson(path, body) {
 }
 
 export function checkApiHealth() {
-  if (!healthCheckPromise) {
-    healthCheckPromise = requestJson('/api/health').catch((error) => {
-      healthCheckPromise = undefined;
-      throw error;
-    });
-  }
-  return healthCheckPromise;
+  return requestJson('/api/health');
 }
 
 export function sendChatMessage(sessionId, message) {
@@ -66,6 +74,10 @@ export function sendWebsiteHelp(message) {
 
 export function recommendApprovals(profile) {
   return postJson('/api/recommend-approvals', profile);
+}
+
+export function recommendApprovalsBySession(sessionId) {
+  return requestJson(`/api/recommend-approvals/by-session/${encodeURIComponent(sessionId)}`);
 }
 
 export function getIndustries() {
